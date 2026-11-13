@@ -56,6 +56,7 @@ class AppListWorker(QThread):
     """Lists installed apps with iTunes File Sharing in the background."""
 
     done = Signal(list)  # [(bundle_id, display_name)]
+    failed = Signal(str)
 
     def __init__(self, backend, parent=None):
         super().__init__(parent)
@@ -65,7 +66,7 @@ class AppListWorker(QThread):
         try:
             self.done.emit(self.backend.list_file_sharing_apps())
         except Exception:
-            self.done.emit([])
+            self.failed.emit(traceback.format_exc(limit=4))
 
 
 class _TransferRow(QWidget):
@@ -244,12 +245,16 @@ class MainWindow(QMainWindow):
                 for i in range(self.device_combo.count()):
                     if self.device_combo.itemData(i) == self._connecting_serial:
                         self.device_combo.setItemText(i, backend.display_name)
-            # track location + list file-sharing apps once per device
+            # track location; AFC backends always show the location selector
             self._current_bundle_id = getattr(backend, "bundle_id", None)
-            if (self._current_bundle_id is None
-                    and self.location_combo.count() <= 1
-                    and hasattr(backend, "list_file_sharing_apps")):
-                self._start_app_listing(backend)
+            if hasattr(backend, "list_file_sharing_apps"):
+                self.location_combo.setVisible(True)
+                if (self._current_bundle_id is None
+                        and self.location_combo.count() <= 1):
+                    self.statusBar().showMessage(
+                        f"Connected: {backend.display_name} — "
+                        "loading apps with file sharing…")
+                    self._start_app_listing(backend)
             idx = self.location_combo.findData(self._current_bundle_id)
             self.location_combo.blockSignals(True)
             self.location_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -315,6 +320,10 @@ class MainWindow(QMainWindow):
         worker = AppListWorker(backend, self)
         worker.done.connect(
             lambda apps, b=backend: self._apps_loaded(b, apps))
+        worker.failed.connect(
+            lambda msg: self.statusBar().showMessage(
+                "Could not list apps: "
+                + msg.strip().splitlines()[-1][:140]))
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
@@ -334,7 +343,12 @@ class MainWindow(QMainWindow):
         idx = combo.findData(self._current_bundle_id)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         combo.blockSignals(False)
-        combo.setVisible(bool(apps))
+        combo.setVisible(bool(apps)
+                         or hasattr(self.backend, "list_file_sharing_apps"))
+        if not apps and hasattr(self.backend, "list_file_sharing_apps"):
+            self.statusBar().showMessage(
+                "No apps with File Sharing found — install e.g. VLC from the "
+                "App Store to transfer files into the iOS Files app.")
 
     def _location_chosen(self, index: int) -> None:
         bundle_id = self.location_combo.itemData(index)
