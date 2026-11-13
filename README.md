@@ -182,6 +182,17 @@ To transfer files so they appear in the iOS **Files app**
 Photos app — the Photos library requires its own import (use iCloud Photos, or
 copy into a file-sharing app such as VLC to view them there).
 
+## Example: copy a WAV/MP3 to the device and play it there
+
+1. Connect, then pick a location like `AUM (Documents)` in the location combo.
+2. Drag your `.wav`/`.mp3` into the tree (or use **Import…**).
+3. On the iPhone: **Files → On My iPhone → AUM → tap the file** — iOS plays it
+   directly with the built-in player (works for WAV, MP3, AAC, …).
+
+Tip: for a real music-player experience (playlists, background playback,
+FLAC/OGG/…), install **VLC** (free) from the App Store — it shows up in the
+location combo automatically.
+
 ## What you can see (and what not)
 
 - **Media (System)** — the device's Media partition (`/var/mobile/Media`):
