@@ -188,8 +188,8 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.location_combo)
 
         act = QAction(style.standardIcon(QStyle.SP_BrowserReload), "Devices", self)
-        act.setToolTip("Re-detect connected devices")
-        act.triggered.connect(self._refresh_devices)
+        act.setToolTip("Re-detect connected devices (and retry connecting)")
+        act.triggered.connect(self._manual_refresh)
         tb.addAction(act)
         tb.addSeparator()
 
@@ -265,12 +265,22 @@ class MainWindow(QMainWindow):
             self.setWindowTitle("iDevice File Browser")
             self.statusBar().showMessage("No device connected")
 
+    def _manual_refresh(self) -> None:
+        """Reload button: retry auto-connect even after a previous failure."""
+        self._auto_connect_failed = False
+        self._refresh_devices()
+
     def _refresh_devices(self) -> None:
         try:
             from .devices import list_devices
             found = list_devices()
         except Exception:
             found = []
+        # device set changed (e.g. unplugged/replugged)? -> allow auto-retry
+        serials = frozenset(d.serial for d in found)
+        if serials != getattr(self, "_last_seen_serials", None):
+            self._last_seen_serials = serials
+            self._auto_connect_failed = False
         if self.device_combo.count() == 0:
             self.device_combo.addItem("Select device…", None)
         known = {self.device_combo.itemData(i)
