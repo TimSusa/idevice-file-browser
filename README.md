@@ -104,6 +104,23 @@ QT_QPA_PLATFORM=offscreen python -m pytest tests/ -q
 python main.py --demo --selftest
 ```
 
+## Install as a macOS app (optional)
+
+A lightweight launcher app can live in `/Applications` so the browser shows up
+in Launchpad/Spotlight and starts like any other app. It simply runs `main.py`
+with the project's virtualenv, so it always uses your current repo checkout:
+
+```
+/Applications/iDevice File Browser.app
+└── Contents
+    ├── Info.plist
+    ├── MacOS/launcher       # bash: cd <repo> && exec .venv/bin/python main.py
+    └── Resources/AppIcon.icns
+```
+
+Note: the launcher references the repo by absolute path — if you move the
+folder, adjust `PROJECT_DIR` in `Contents/MacOS/launcher`.
+
 ## Usage
 
 | Action             | How                                                            |
