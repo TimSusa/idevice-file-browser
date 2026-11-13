@@ -106,9 +106,24 @@ python main.py --demo --selftest
 
 ## Install as a macOS app (optional)
 
-A lightweight launcher app can live in `/Applications` so the browser shows up
-in Launchpad/Spotlight and starts like any other app. It simply runs `main.py`
-with the project's virtualenv, so it always uses your current repo checkout:
+### Standalone bundle (recommended)
+
+Build a fully self-contained `/Applications/iDevice File Browser.app` with
+PyInstaller — it embeds Python, Qt and pymobiledevice3, so it keeps working
+even if the repo folder is moved or deleted:
+
+```bash
+packaging/build_app.sh     # builds dist/… and installs to /Applications
+```
+
+(The script also regenerates the icon via `packaging/make_icon.py` when
+`packaging/AppIcon.icns` is missing.)
+
+### Lightweight launcher (alternative)
+
+Instead of a full bundle, a small launcher app in `/Applications` can simply
+run `main.py` with the project's virtualenv — it always uses your current repo
+checkout, but breaks if the folder moves:
 
 ```
 /Applications/iDevice File Browser.app
@@ -117,9 +132,6 @@ with the project's virtualenv, so it always uses your current repo checkout:
     ├── MacOS/launcher       # bash: cd <repo> && exec .venv/bin/python main.py
     └── Resources/AppIcon.icns
 ```
-
-Note: the launcher references the repo by absolute path — if you move the
-folder, adjust `PROJECT_DIR` in `Contents/MacOS/launcher`.
 
 ## Usage
 
