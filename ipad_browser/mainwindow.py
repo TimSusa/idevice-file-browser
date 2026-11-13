@@ -32,19 +32,40 @@ class ConnectWorker(QThread):
     connected = Signal(object)  # FileBackend
     failed = Signal(str)
 
-    def __init__(self, serial: Optional[str], tunnel: Optional[str], parent=None):
+    def __init__(self, serial: Optional[str], tunnel: Optional[str],
+                 bundle_id: Optional[str] = None, app_name: Optional[str] = None,
+                 parent=None):
         super().__init__(parent)
         self.serial = serial
         self.tunnel = tunnel
+        self.bundle_id = bundle_id
+        self.app_name = app_name
 
     def run(self) -> None:
         try:
             from .devices import connect
-            backend = connect(self.serial, self.tunnel)
+            backend = connect(self.serial, self.tunnel,
+                              bundle_id=self.bundle_id, app_name=self.app_name)
         except Exception:
             self.failed.emit(traceback.format_exc(limit=4))
         else:
             self.connected.emit(backend)
+
+
+class AppListWorker(QThread):
+    """Lists installed apps with iTunes File Sharing in the background."""
+
+    done = Signal(list)  # [(bundle_id, display_name)]
+
+    def __init__(self, backend, parent=None):
+        super().__init__(parent)
+        self.backend = backend
+
+    def run(self) -> None:
+        try:
+            self.done.emit(self.backend.list_file_sharing_apps())
+        except Exception:
+            self.done.emit([])
 
 
 class _TransferRow(QWidget):
@@ -90,6 +111,9 @@ class MainWindow(QMainWindow):
         self._workers: list = []
         self._auto_connect_failed = False
         self._connecting_serial: Optional[str] = None
+        self._current_serial: Optional[str] = None
+        self._current_bundle_id: Optional[str] = None
+        self._app_names: dict = {}
 
         self.model = DeviceTreeModel(self)
         self.model.exporter = self._export_for_drag
@@ -152,6 +176,14 @@ class MainWindow(QMainWindow):
         self.device_combo.activated.connect(self._device_chosen)
         tb.addWidget(self.device_combo)
 
+        # location selector: Media partition vs. app Documents (Files app)
+        self.location_combo = QComboBox()
+        self.location_combo.setMinimumWidth(200)
+        self.location_combo.addItem("Media (System)", None)
+        self.location_combo.setVisible(False)
+        self.location_combo.activated.connect(self._location_chosen)
+        tb.addWidget(self.location_combo)
+
         act = QAction(style.standardIcon(QStyle.SP_BrowserReload), "Devices", self)
         act.setToolTip("Re-detect connected devices")
         act.triggered.connect(self._refresh_devices)
@@ -212,6 +244,16 @@ class MainWindow(QMainWindow):
                 for i in range(self.device_combo.count()):
                     if self.device_combo.itemData(i) == self._connecting_serial:
                         self.device_combo.setItemText(i, backend.display_name)
+            # track location + list file-sharing apps once per device
+            self._current_bundle_id = getattr(backend, "bundle_id", None)
+            if (self._current_bundle_id is None
+                    and self.location_combo.count() <= 1
+                    and hasattr(backend, "list_file_sharing_apps")):
+                self._start_app_listing(backend)
+            idx = self.location_combo.findData(self._current_bundle_id)
+            self.location_combo.blockSignals(True)
+            self.location_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            self.location_combo.blockSignals(False)
         else:
             self.setWindowTitle("iDevice File Browser")
             self.statusBar().showMessage("No device connected")
@@ -241,21 +283,67 @@ class MainWindow(QMainWindow):
         serial = self.device_combo.itemData(index)
         if serial:
             self._auto_connect_failed = False
+            self._current_bundle_id = None
+            self.location_combo.setVisible(False)
             self._connect(serial)
 
-    def _connect(self, serial: Optional[str]) -> None:
+    def _connect(self, serial: Optional[str],
+                 bundle_id: Optional[str] = None,
+                 app_name: Optional[str] = None) -> None:
         self.statusBar().showMessage(
             "Connecting… (unlock the device and tap \"Trust\" if asked)")
         self._connecting_serial = serial
-        worker = ConnectWorker(serial, self._tunnel, self)
+        self._current_serial = serial
+        worker = ConnectWorker(serial, self._tunnel, bundle_id, app_name, self)
         worker.connected.connect(self._use_backend)
         worker.failed.connect(self._connect_failed)
         worker.start()
 
     def _connect_failed(self, message: str) -> None:
         self._auto_connect_failed = True
+        # revert the location combo to whatever the backend actually is
+        self._current_bundle_id = getattr(self.backend, "bundle_id", None)
+        idx = self.location_combo.findData(self._current_bundle_id)
+        self.location_combo.blockSignals(True)
+        self.location_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.location_combo.blockSignals(False)
         self.statusBar().showMessage("Connection failed")
         QMessageBox.warning(self, "Could not connect", message)
+
+    # -------------------------------------------------------- location (apps)
+    def _start_app_listing(self, backend: FileBackend) -> None:
+        worker = AppListWorker(backend, self)
+        worker.done.connect(
+            lambda apps, b=backend: self._apps_loaded(b, apps))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _apps_loaded(self, backend: FileBackend, apps: list) -> None:
+        if backend is not self.backend:
+            return  # device/location changed while listing
+        self._populate_location_combo(apps)
+
+    def _populate_location_combo(self, apps: list) -> None:
+        combo = self.location_combo
+        self._app_names = dict(apps)
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Media (System)", None)
+        for bundle_id, name in apps:
+            combo.addItem(f"{name} (Documents)", bundle_id)
+        idx = combo.findData(self._current_bundle_id)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+        combo.setVisible(bool(apps))
+
+    def _location_chosen(self, index: int) -> None:
+        bundle_id = self.location_combo.itemData(index)
+        if bundle_id == self._current_bundle_id or not self._current_serial:
+            return
+        app_name = self._app_names.get(bundle_id) if bundle_id else None
+        self._current_bundle_id = bundle_id
+        self._connect(self._current_serial, bundle_id=bundle_id,
+                      app_name=app_name)
 
     # ------------------------------------------------------ navigation helpers
     def _selected_paths(self) -> list:

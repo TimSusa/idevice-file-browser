@@ -110,12 +110,21 @@ class AfcBackend(FileBackend):
     def __init__(self, serial: Optional[str] = None,
                  tunnel: Optional[str] = None,
                  service_name: Optional[str] = None,
-                 display_name: Optional[str] = None):
+                 display_name: Optional[str] = None,
+                 bundle_id: Optional[str] = None,
+                 app_name: Optional[str] = None):
         """Connect to a device by serial (usbmux) or tunnel ("host:port").
+
+        With `bundle_id`, the backend is rooted at that app's Documents folder
+        (house_arrest / iTunes File Sharing) instead of the Media partition.
 
         Raises pymobiledevice3 exceptions (pairing/connection/service errors);
         callers are expected to map them to user-friendly messages.
         """
+        self.bundle_id = bundle_id
+        # VendDocuments sessions are rooted at the app container but only allow
+        # access below /Documents; map our "/" onto it (like the Files app).
+        self._root_prefix = "/Documents" if bundle_id else "/"
         if AfcService is None:  # pragma: no cover
             raise BackendError(f"pymobiledevice3 unavailable: {_IMPORT_ERROR}")
         # Drive the whole async stack (lockdown client + AFC service) on a
@@ -139,18 +148,59 @@ class AfcBackend(FileBackend):
             else:
                 lockdown = await _maybe_await(_call_with_supported_kwargs(
                     create_using_usbmux, serial=serial, autopair=True))
-            service = AfcService(lockdown, service_name=service_name)
-            aenter = getattr(service, "__aenter__", None)
-            if aenter is not None:
-                entered = await aenter()  # connect + start the demux reader
-                if entered is not None:
-                    service = entered
+            if bundle_id:
+                # house_arrest vends the app's sandbox and speaks AFC on the
+                # same connection; create() connects + vends immediately.
+                from pymobiledevice3.services.house_arrest import (
+                    HouseArrestService)
+                service = await HouseArrestService.create(
+                    lockdown, bundle_id, documents_only=True)
+            else:
+                service = AfcService(lockdown, service_name=service_name)
+                aenter = getattr(service, "__aenter__", None)
+                if aenter is not None:
+                    entered = await aenter()  # connect + start the demux reader
+                    if entered is not None:
+                        service = entered
             return lockdown, service
 
         self.lockdown, self.afc = self._submit(_open())
         if display_name is None:
-            display_name = self._describe_lockdown(self.lockdown)
+            if bundle_id:
+                display_name = f"{app_name or bundle_id} (Documents)"
+            else:
+                display_name = self._describe_lockdown(self.lockdown)
         self.display_name = str(display_name)
+
+    # -- installed apps with iTunes File Sharing ------------------------------
+    def list_file_sharing_apps(self) -> list:
+        """Return [(bundle_id, display_name)] for apps that expose their
+        Documents folder via iTunes File Sharing (visible in the Files app)."""
+        return self._submit(self._list_file_sharing_apps())
+
+    async def _list_file_sharing_apps(self):
+        from pymobiledevice3.services.installation_proxy import (
+            InstallationProxyService)
+        proxy = InstallationProxyService(self.lockdown)
+        try:
+            apps = await proxy.get_apps(application_type="Any")
+        finally:
+            close = (getattr(proxy, "aclose", None)
+                     or getattr(proxy, "close", None))
+            if close is not None:
+                try:
+                    await _maybe_await(close())
+                except Exception:
+                    pass
+        result = []
+        for bundle_id, info in (apps or {}).items():
+            if not info.get("UIFileSharingEnabled"):
+                continue
+            name = (info.get("CFBundleDisplayName")
+                    or info.get("CFBundleName") or bundle_id)
+            result.append((bundle_id, str(name)))
+        result.sort(key=lambda item: item[1].lower())
+        return result
 
     @staticmethod
     def _describe_lockdown(lockdown) -> str:
@@ -217,9 +267,15 @@ class AfcBackend(FileBackend):
             return 0.0
         return v / 1e9 if v > 1e12 else v  # nanoseconds vs seconds
 
+    def _device_path(self, path: str) -> str:
+        """Translate an app-facing path to the real device path (root prefix)."""
+        if self._root_prefix == "/":
+            return norm_path(path)
+        return norm_path(self._root_prefix + norm_path(path))
+
     def _entry(self, path: str) -> FileEntry:
         path = norm_path(path)
-        info = self._run(self.afc.stat(path))
+        info = self._run(self.afc.stat(self._device_path(path)))
         is_dir = self._is_dir_info(info)
         return FileEntry(
             path=path,
@@ -231,7 +287,7 @@ class AfcBackend(FileBackend):
 
     # -- FileBackend API ------------------------------------------------------
     def listdir(self, path: str) -> list[FileEntry]:
-        names = self._run(self.afc.listdir(norm_path(path)))
+        names = self._run(self.afc.listdir(self._device_path(path)))
         entries = []
         for name in names:
             if name in (".", ".."):
@@ -247,20 +303,21 @@ class AfcBackend(FileBackend):
         return self._entry(path)
 
     def mkdir(self, path: str) -> None:
-        self._run(self.afc.makedirs(norm_path(path)))
+        self._run(self.afc.makedirs(self._device_path(path)))
 
     def remove(self, path: str) -> None:
-        self._run(self.afc.rm(norm_path(path), force=True))
+        self._run(self.afc.rm(self._device_path(path), force=True))
 
     def rename(self, src: str, dst: str) -> None:
-        self._run(self.afc.rename(norm_path(src), norm_path(dst)))
+        self._run(self.afc.rename(self._device_path(src),
+                                  self._device_path(dst)))
 
     def open_read(self, path: str) -> BinaryIO:
-        handle = self._run(self.afc.fopen(norm_path(path), "r"))
+        handle = self._run(self.afc.fopen(self._device_path(path), "r"))
         return _AfcFileIO(self.afc, self._run, handle)
 
     def open_write(self, path: str) -> BinaryIO:
-        handle = self._run(self.afc.fopen(norm_path(path), "w"))
+        handle = self._run(self.afc.fopen(self._device_path(path), "w"))
         return _AfcFileIO(self.afc, self._run, handle)
 
     def close(self) -> None:

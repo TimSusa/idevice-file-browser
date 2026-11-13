@@ -53,8 +53,14 @@ NO_DEVICE_HELP = ("No iPhone or iPad was found. Check the USB cable and make "
                   "sure the device is awake.")
 
 
-def connect(serial: Optional[str] = None, tunnel: Optional[str] = None):
-    """Create an AfcBackend for a device.
+APP_HELP = ("Could not open the app's Documents folder. Make sure the app is "
+            "still installed and supports File Sharing (check in Finder: "
+            "device → Files).")
+
+
+def connect(serial: Optional[str] = None, tunnel: Optional[str] = None,
+            bundle_id: Optional[str] = None, app_name: Optional[str] = None):
+    """Create an AfcBackend for a device (or an app's Documents folder).
 
     Raises RuntimeError with an actionable, user-friendly message on failure.
     """
@@ -63,7 +69,10 @@ def connect(serial: Optional[str] = None, tunnel: Optional[str] = None):
     from .afc_backend import AfcBackend
 
     try:
-        return AfcBackend(serial=serial, tunnel=tunnel)
+        return AfcBackend(serial=serial, tunnel=tunnel,
+                          bundle_id=bundle_id, app_name=app_name)
+    except exc.AppNotInstalledError as e:
+        raise RuntimeError(f"{APP_HELP}\n\nDetails: {e}") from e
     except (exc.NoDeviceConnectedError, exc.DeviceNotFoundError,
             exc.ConnectionFailedError, exc.MuxException) as e:
         raise RuntimeError(f"{NO_DEVICE_HELP}\n\nDetails: {e}") from e

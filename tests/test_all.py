@@ -260,3 +260,25 @@ def test_device_generic_branding(qapp, tmp_path):
         assert "iDevice" in window.windowTitle()
     finally:
         window.close()
+
+
+def test_location_combo(qapp, tmp_path):
+    from ipad_browser.mainwindow import MainWindow
+    window = MainWindow(demo=True, demo_root=tmp_path / "demo3")
+    try:
+        assert window.location_combo.isHidden()
+
+        window._populate_location_combo(
+            [("com.vlc", "VLC"), ("com.docs", "Documents")])
+        combo = window.location_combo
+        assert not combo.isHidden()
+        assert combo.count() == 3
+        assert combo.itemData(0) is None                    # Media (System)
+        assert combo.itemData(1) == "com.vlc"
+        assert "VLC" in combo.itemText(1)
+        assert combo.itemData(2) == "com.docs"
+
+        window._populate_location_combo([])
+        assert window.location_combo.isHidden()
+    finally:
+        window.close()

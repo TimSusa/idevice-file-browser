@@ -13,6 +13,8 @@ Built with Python + PySide6 (Qt) + [pymobiledevice3](https://github.com/doronz88
 - Browse the device's AFC-exposed file system (the *Media* partition: `DCIM`,
   `Books`, `Downloads`, `Recordings`, iTunes media, …) — works identically on
   iPhone and iPad (same usbmux/AFC protocol stack)
+- **Browse app Documents folders** (iTunes File Sharing) — files you put there
+  appear in the iOS **Files app** under *On My iPhone → \<App\>*
 - Copy files device → Mac and Mac → device (toolbar buttons, dialogs, or drag & drop)
 - Move/rename/delete directly on the device (drag onto folders, F2 to rename,
   Del to delete)
@@ -157,14 +159,38 @@ Notes:
 - On-device **copy** streams through the Mac (AFC has no server-side copy).
   **Move** is instant (a rename).
 
+## Where did my transferred file go? (Media vs. App Documents)
+
+The **Media (System)** location is the iOS media partition: `DCIM`, `Books`,
+`Recordings`, iTunes media… Its `/Downloads` folder is an *internal* iTunes
+Store area (that's why you only see `downloads.*.sqlitedb` files there) — it is
+**not** the Downloads folder shown in the iOS Files app.
+
+To transfer files so they appear in the iOS **Files app**
+(*On My iPhone → \<App\>*):
+
+1. Pick an app in the **location combo** (next to the device picker), e.g.
+   `VLC (Documents)` — it lists all installed apps with iTunes File Sharing
+   enabled (VLC, Documents by Readdle, Pages, GarageBand, …).
+2. Copy/move files as usual (drag & drop or Import…).
+3. On the device, open **Files → On My iPhone → the app's folder**.
+
+> If the combo stays hidden, no file-sharing apps are installed — grab a free
+> one from the App Store (e.g. VLC).
+
+**Photos caveat:** copying image files into `/DCIM` does *not* add them to the
+Photos app — the Photos library requires its own import (use iCloud Photos, or
+copy into a file-sharing app such as VLC to view them there).
+
 ## What you can see (and what not)
 
-AFC exposes the device's Media partition (`/var/mobile/Media`): `DCIM` (photos &
-videos), `Books`, `Recordings`, `Downloads`, iTunes media, …
+- **Media (System)** — the device's Media partition (`/var/mobile/Media`):
+  `DCIM` (photos & videos), `Books`, `Recordings`, iTunes media, …
+- **\<App\> (Documents)** — the Documents folder of any app with iTunes File
+  Sharing (via the `house_arrest` service); visible in the iOS Files app.
 
-Not accessible without a jailbreak: app sandboxes (an extension via the
-`house_arrest` service for apps with iTunes File Sharing is possible),
-system files, and the "On My iPhone/iPad" area of the Files app.
+Not accessible without a jailbreak: full app sandboxes (only their Documents
+folder is shared), system files, and iCloud Drive contents.
 
 ## Development
 
