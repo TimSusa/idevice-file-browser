@@ -154,6 +154,8 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_transfers_dock()
         self.statusBar().showMessage("No device connected")
+        from . import COMMIT, __version__
+        self.statusBar().addPermanentWidget(QLabel(f"v{__version__} · {COMMIT}"))
 
         if demo:
             self._use_backend(MockBackend(demo_root, seed=True))

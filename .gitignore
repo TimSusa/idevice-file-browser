@@ -16,6 +16,7 @@ build/
 dist/
 *.egg-info/
 *.spec
+ipad_browser/_build_info.py
 
 # macOS
 .DS_Store

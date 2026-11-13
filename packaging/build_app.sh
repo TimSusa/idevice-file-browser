@@ -2,12 +2,30 @@
 # Build a fully standalone "iDevice File Browser.app" (PyInstaller: embeds
 # Python, Qt and pymobiledevice3) and install it to /Applications.
 #
+# Fresh-build guarantees:
+#   1. build/ and dist/ are deleted first and PyInstaller runs with --clean
+#   2. the current git commit ("-dirty" if there are uncommitted changes) is
+#      stamped into the bundle and shown in the app's status bar
+#   3. after building, the bundle must report that exact commit back via
+#      --build-info and boot successfully (--demo --selftest), otherwise the
+#      install aborts
+#
 # Usage:  packaging/build_app.sh            (run from anywhere)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+APP_NAME="iDevice File Browser"
 [ -x .venv/bin/python ] || { echo "run ./run.sh once first (creates .venv)"; exit 1; }
 .venv/bin/pip install -q pyinstaller
+
+# --- stamp build info (git commit + time) ------------------------------------
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    COMMIT="$COMMIT-dirty"
+fi
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf 'COMMIT = "%s"\nTIMESTAMP = "%s"\n' "$COMMIT" "$TIMESTAMP" > ipad_browser/_build_info.py
+echo "==> building commit $COMMIT ($TIMESTAMP)"
 
 # --- icon --------------------------------------------------------------------
 if [ ! -f packaging/AppIcon.icns ]; then
@@ -25,8 +43,9 @@ if [ ! -f packaging/AppIcon.icns ]; then
     iconutil -c icns "$ICONSET" -o packaging/AppIcon.icns
 fi
 
-# --- build -------------------------------------------------------------------
-.venv/bin/pyinstaller --noconfirm --windowed --name "iDevice File Browser" \
+# --- clean build --------------------------------------------------------------
+rm -rf build dist
+.venv/bin/pyinstaller --clean --noconfirm --windowed --name "$APP_NAME" \
     --icon packaging/AppIcon.icns \
     --osx-bundle-identifier com.timsusa.idevice-file-browser \
     --collect-all pymobiledevice3 --collect-all ipsw_parser \
@@ -35,7 +54,20 @@ fi
     --copy-metadata pyimg4 \
     main.py
 
+# --- verify: bundle must report back this exact commit ------------------------
+EXE="dist/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+REPORTED=$("$EXE" --build-info)
+echo "==> bundle reports: $REPORTED"
+echo "$REPORTED" | grep -q "$COMMIT" || {
+    echo "ERROR: bundle does NOT contain commit $COMMIT — aborting install!"
+    exit 1
+}
+
+# --- verify: bundle boots -----------------------------------------------------
+"$EXE" --demo --selftest
+
 # --- install -----------------------------------------------------------------
-rm -rf "/Applications/iDevice File Browser.app"
-cp -R "dist/iDevice File Browser.app" /Applications/
-echo "Installed: /Applications/iDevice File Browser.app"
+rm -rf "/Applications/$APP_NAME.app"
+cp -R "dist/$APP_NAME.app" /Applications/
+echo "==> Installed: /Applications/$APP_NAME.app"
+echo "==> $REPORTED"

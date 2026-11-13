@@ -262,6 +262,18 @@ def test_device_generic_branding(qapp, tmp_path):
         window.close()
 
 
+def test_build_info_flag():
+    """main.py --build-info prints the version line and exits 0 (no GUI)."""
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, "main.py", "--build-info"],
+                            cwd=root, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0
+    assert "iDevice File Browser" in result.stdout
+    assert "build" in result.stdout
+
+
 def test_location_combo(qapp, tmp_path):
     from ipad_browser.mainwindow import MainWindow
     window = MainWindow(demo=True, demo_root=tmp_path / "demo3")

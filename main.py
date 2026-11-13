@@ -21,7 +21,14 @@ def main() -> int:
                         help="connect through a pymobiledevice3 tunnel (iOS 17+)")
     parser.add_argument("--selftest", action="store_true",
                         help="start the app and quit automatically after 2 seconds")
+    parser.add_argument("--build-info", action="store_true",
+                        help="print version/build info and exit (no GUI)")
     args = parser.parse_args()
+
+    if args.build_info:
+        from ipad_browser import COMMIT, TIMESTAMP, __version__
+        print(f"iDevice File Browser v{__version__} build {COMMIT} ({TIMESTAMP})")
+        return 0
 
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
