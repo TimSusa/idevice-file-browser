@@ -274,6 +274,23 @@ def test_build_info_flag():
     assert "build" in result.stdout
 
 
+def test_end_to_end_import_into_demo(qapp, tmp_path):
+    """Simulates a Finder drop: requestImport -> _on_import -> PushWorker."""
+    from ipad_browser.mainwindow import MainWindow
+    window = MainWindow(demo=True, demo_root=tmp_path / "demo4")
+    try:
+        src = tmp_path / "song.wav"
+        src.write_bytes(b"RIFF" + b"x" * 1000)
+        window._on_import([str(src), str(tmp_path / "missing.wav")], "/")
+        assert window._workers, "no import worker was started"
+        for w in list(window._workers):
+            w.wait(10000)
+        assert (tmp_path / "demo4" / "song.wav").read_bytes() == \
+            b"RIFF" + b"x" * 1000
+    finally:
+        window.close()
+
+
 def test_location_combo(qapp, tmp_path):
     from ipad_browser.mainwindow import MainWindow
     window = MainWindow(demo=True, demo_root=tmp_path / "demo3")

@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         self._current_serial: Optional[str] = None
         self._current_bundle_id: Optional[str] = None
         self._app_names: dict = {}
+        self._media_hint_shown = False
 
         self.model = DeviceTreeModel(self)
         self.model.exporter = self._export_for_drag
@@ -180,6 +181,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.device_combo)
 
         # location selector: Media partition vs. app Documents (Files app)
+        tb.addWidget(QLabel(" Location: "))
         self.location_combo = QComboBox()
         self.location_combo.setMinimumWidth(200)
         self.location_combo.addItem("Media (System)", None)
@@ -471,6 +473,7 @@ class MainWindow(QMainWindow):
     def _on_import(self, locals_: list, dst_dir: str) -> None:
         if not self.backend:
             return
+        count = 0
         for local in locals_:
             p = Path(local)
             if not p.exists():
@@ -478,6 +481,23 @@ class MainWindow(QMainWindow):
             remote = self._unique_remote(dst_dir, p.name)
             self._start_worker(PushWorker(self.backend, p, remote, self),
                                f"Import {p.name}", refresh=(dst_dir,))
+            count += 1
+        if not count:
+            return
+        if getattr(self.backend, "bundle_id", None):
+            app = self.backend.display_name.removesuffix(" (Documents)")
+            self.statusBar().showMessage(
+                f"Importing {count} file(s) → {self.backend.display_name} — "
+                f"then on the iPhone: Files → On My iPhone → {app}")
+        elif self.isVisible() and not self._media_hint_shown:
+            self._media_hint_shown = True
+            QMessageBox.information(
+                self, "Where do the files go?",
+                "Files copied to 'Media (System)' are NOT visible in the iOS "
+                "Files app.\n\nTo find them on the iPhone (Files → On My "
+                "iPhone → <App>): first pick an app like 'AUM (Documents)' in "
+                "the Location dropdown (next to the device picker), then drag "
+                "the files into the tree.")
 
     # --------------------------------------------------------- worker plumbing
     def _start_worker(self, worker: Worker, title: str,
