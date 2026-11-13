@@ -1,0 +1,6 @@
+# GUI toolkit (Qt for Python, widgets only)
+PySide6-Essentials>=6.7
+# Pure-Python implementation of the iOS protocols (usbmux / lockdown / AFC)
+pymobiledevice3>=4.14
+# Tests
+pytest>=8.0
